@@ -7,6 +7,10 @@
 #include <stdio.h>
 #include <math.h>
 
+#include <arpa/inet.h>
+#include <sys/mman.h>
+#include <fcntl.h>
+
 #include "constants.h"
 #include "findEyeCenter.h"
 #include "findEyeCorner.h"
@@ -16,17 +20,57 @@
 
 
 /** Function Headers */
-void detectAndDisplay( cv::Mat frame );
+std::vector<cv::Rect> detectAndDisplay( cv::Mat frame );
 
 /** Global variables */
 //-- Note, either copy these two files from opencv/data/haarscascades to your current folder, or change these locations
-cv::String face_cascade_name = "../../../res/haarcascade_frontalface_alt.xml";
+cv::String face_cascade_name = "/home/sekkat/eyeLikes/eyeLike/res/haarcascade_frontalface_alt.xml";
 cv::CascadeClassifier face_cascade;
 std::string main_window_name = "Capture - Face detection";
-std::string face_window_name = "Capture - Face";
+//std::string face_window_name = "Capture - Face";
 cv::RNG rng(12345);
 cv::Mat debugImage;
 cv::Mat skinCrCbHist = cv::Mat::zeros(cv::Size(256, 256), CV_8UC1);
+
+int initserver(){
+	int socket_info;
+	struct sockaddr_in server;
+
+	//create socket
+	socket_info = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if (socket_info == -1) {
+		printf("Could not create socket");
+	}
+
+	//assign values
+	server.sin_addr.s_addr = inet_addr("127.0.0.1");
+	server.sin_family = AF_INET;
+	server.sin_port = htons( 20320 );
+
+	//checks connection
+	/*if (bind(socket_info, (struct sockaddr *)&server, sizeof(server)) < 0) {
+		perror("Connection error (bind)");
+		//return 1;
+	}*/
+
+	if (connect(socket_info, (struct sockaddr *)&server, sizeof(server)) < 0) {
+		perror("Connection error (connect)");
+		//return 1;
+	    }
+	return socket_info;
+}
+
+void sendFaceCenter(bool face, cv::Point center, int socket_info){
+	//Sends message back
+	std::ostringstream stream;
+	stream  << "face " << face << std::endl << "x " << center.x << std::endl << "y " << center.y << std::endl;
+	std::string str = stream.str();
+	if(send(socket_info, str.c_str(), str.size(), 0) <0) {
+		perror("Send failed");
+		//return false;
+	}
+	//return true;
+}
 
 /**
  * @function main
@@ -34,21 +78,23 @@ cv::Mat skinCrCbHist = cv::Mat::zeros(cv::Size(256, 256), CV_8UC1);
 int main( int argc, const char** argv ) {
   cv::Mat frame;
 
+   int  socket_info = initserver();
+
   // Load the cascades
   if( !face_cascade.load( face_cascade_name ) ){ printf("--(!)Error loading face cascade, please change face_cascade_name in source code.\n"); return -1; };
 
-  cv::namedWindow(main_window_name,CV_WINDOW_NORMAL);
-  cv::moveWindow(main_window_name, 400, 100);
-  cv::namedWindow(face_window_name,CV_WINDOW_NORMAL);
-  cv::moveWindow(face_window_name, 10, 100);
-  cv::namedWindow("Right Eye",CV_WINDOW_NORMAL);
-  cv::moveWindow("Right Eye", 10, 600);
-  cv::namedWindow("Left Eye",CV_WINDOW_NORMAL);
-  cv::moveWindow("Left Eye", 10, 800);
-  cv::namedWindow("aa",CV_WINDOW_NORMAL);
-  cv::moveWindow("aa", 10, 800);
-  cv::namedWindow("aaa",CV_WINDOW_NORMAL);
-  cv::moveWindow("aaa", 10, 800);
+  //cv::namedWindow(main_window_name,CV_WINDOW_NORMAL);
+  //cv::moveWindow(main_window_name, 400, 100);
+  //cv::namedWindow(face_window_name,CV_WINDOW_NORMAL);
+  //cv::moveWindow(face_window_name, 10, 100);
+  //cv::namedWindow("Right Eye",CV_WINDOW_NORMAL);
+  //cv::moveWindow("Right Eye", 10, 600);
+  //cv::namedWindow("Left Eye",CV_WINDOW_NORMAL);
+  //cv::moveWindow("Left Eye", 10, 800);
+  //cv::namedWindow("aa",CV_WINDOW_NORMAL);
+  //cv::moveWindow("aa", 10, 800);
+  //cv::namedWindow("aaa",CV_WINDOW_NORMAL);
+  //cv::moveWindow("aaa", 10, 800);
 
   createCornerKernels();
   ellipse(skinCrCbHist, cv::Point(113, 155.6), cv::Size(23.4, 15.2),
@@ -72,14 +118,24 @@ int main( int argc, const char** argv ) {
 
       // Apply the classifier to the frame
       if( !frame.empty() ) {
-        detectAndDisplay( frame );
+        std::vector<cv::Rect> faces = detectAndDisplay( frame );
+	 cv::Point center;
+	  bool face = false;
+	  for( int i = 0; i < faces.size(); i++ )
+	  {
+	    rectangle(debugImage, faces[i], 1234);
+	    center.x=faces[i].x+faces[i].width/2;
+	    center.y=faces[i].y+faces[i].height/2;
+	    face = true;
+	  }
+	 sendFaceCenter(face, center, socket_info);
       }
       else {
         printf(" --(!) No captured frame -- Break!");
         break;
       }
 
-      imshow(main_window_name,debugImage);
+      //imshow(main_window_name,debugImage);
 
       int c = cv::waitKey(10);
       if( (char)c == 'c' ) { break; }
@@ -167,7 +223,7 @@ void findEyes(cv::Mat frame_gray, cv::Rect face) {
     circle(faceROI, rightRightCorner, 3, 200);
   }
 
-  imshow(face_window_name, faceROI);
+  //imshow(face_window_name, faceROI);
 //  cv::Rect roi( cv::Point( 0, 0 ), faceROI.size());
 //  cv::Mat destinationROI = debugImage( roi );
 //  faceROI.copyTo( destinationROI );
@@ -198,7 +254,7 @@ cv::Mat findSkin (cv::Mat &frame) {
 /**
  * @function detectAndDisplay
  */
-void detectAndDisplay( cv::Mat frame ) {
+std::vector<cv::Rect> detectAndDisplay( cv::Mat frame ) {
   std::vector<cv::Rect> faces;
   //cv::Mat frame_gray;
 
@@ -212,13 +268,6 @@ void detectAndDisplay( cv::Mat frame ) {
   //-- Detect faces
   face_cascade.detectMultiScale( frame_gray, faces, 1.1, 2, 0|CV_HAAR_SCALE_IMAGE|CV_HAAR_FIND_BIGGEST_OBJECT, cv::Size(150, 150) );
 //  findSkin(debugImage);
-
-  for( int i = 0; i < faces.size(); i++ )
-  {
-    rectangle(debugImage, faces[i], 1234);
-  }
-  //-- Show what you got
-  if (faces.size() > 0) {
-    findEyes(frame_gray, faces[0]);
-  }
+  return faces;
 }
+
