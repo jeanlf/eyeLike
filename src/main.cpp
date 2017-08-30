@@ -60,12 +60,11 @@ int initserver(){
 	return socket_info;
 }
 
-void sendFaceCenter(bool face, cv::Point center, int socket_info){
+void sendFaceCenter(int face, float cx, float cy, int socket_info){
 	//Sends message back
-	std::ostringstream stream;
-	stream  << "face " << face << std::endl << "x " << center.x << std::endl << "y " << center.y << std::endl;
-	std::string str = stream.str();
-	if(send(socket_info, str.c_str(), str.size(), 0) <0) {
+	char szBuf[1024];
+	sprintf(szBuf, "gpac:gaze=%d,%f,%f\n", face, cx, cy);
+	if(send(socket_info, szBuf, strlen(szBuf), 0) <0) {
 		perror("Send failed");
 		//return false;
 	}
@@ -119,16 +118,19 @@ int main( int argc, const char** argv ) {
       // Apply the classifier to the frame
       if( !frame.empty() ) {
         std::vector<cv::Rect> faces = detectAndDisplay( frame );
-	 cv::Point center;
+	 float cx, cy;
 	  bool face = false;
 	  for( int i = 0; i < faces.size(); i++ )
 	  {
 	    rectangle(debugImage, faces[i], 1234);
-	    center.x=faces[i].x+faces[i].width/2;
-	    center.y=faces[i].y+faces[i].height/2;
-	    face = true;
+	    cx=(faces[i].x+faces[i].width/2); cx /= frame.cols;
+	    cy=(faces[i].y+faces[i].height/2); cy /= frame.rows;
+	    sendFaceCenter(i+1, cx, cy, socket_info);
 	  }
-	 sendFaceCenter(face, center, socket_info);
+	if (! faces.size()) {
+	    sendFaceCenter(0, 0.0f, 0.0f, socket_info);
+	printf("no face detected\n");
+	}
       }
       else {
         printf(" --(!) No captured frame -- Break!");
