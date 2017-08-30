@@ -24,7 +24,7 @@ std::vector<cv::Rect> detectAndDisplay( cv::Mat frame );
 
 /** Global variables */
 //-- Note, either copy these two files from opencv/data/haarscascades to your current folder, or change these locations
-cv::String face_cascade_name = "/home/sekkat/eyeLikes/eyeLike/res/haarcascade_frontalface_alt.xml";
+cv::String face_cascade_name = "../res/haarcascade_frontalface_alt.xml";
 cv::CascadeClassifier face_cascade;
 std::string main_window_name = "Capture - Face detection";
 //std::string face_window_name = "Capture - Face";
